@@ -1,0 +1,131 @@
+package paypal
+
+import (
+"context"
+"encoding/json"
+"fmt"
+"net/http"
+"strconv"
+"strings"
+"sync"
+
+"github.com/netlify/gocommerce/models"
+"github.com/pariz/gountries"
+"github.com/sirupsen/logrus"
+
+paypalsdk "github.com/netlify/PayPal-Go-SDK"
+"github.com/netlify/gocommerce/conf"
+gcontext "github.com/netlify/gocommerce/context"
+"github.com/netlify/gocommerce/payments"
+"github.com/pborman/uuid"
+"github.com/pkg/errors"
+)
+
+type paypalPaymentProvider struct {
+client       *paypalsdk.Client
+profile      *paypalsdk.WebProfile
+profileMutex sync.Mutex
+}
+
+type paypalBodyParams struct {
+PaypalID     string `json:"paypal_payment_id"`
+PaypalUserID string `json:"paypal_user_id"`
+}
+
+// Config contains PayPal-specific configuration for payment providers.
+type Config struct {
+ClientID string `mapstructure:"client_id" json:"client_id"`
+Secret   string `mapstructure:"secret" json:"secret"`
+Env      string `mapstructure:"env" json:"env"`
+}
+
+// NewPaymentProvider creates a new PayPal payment provider using the provided configuration.
+func NewPaymentProvider(config Config) (payments.Provider, error) {
+var paypal *paypalsdk.Client
+if config.ClientID == "" || config.Secret == "" {
+return nil, errors.New("missing PayPal client_id and/or secret")
+}
+var ppEnv string
+if config.Env == "production" {
+ppEnv = paypalsdk.APIBaseLive
+} else if config.Env == "sandbox" {
+ppEnv = paypalsdk.APIBaseSandBox
+} else {
+// used for testing
+ppEnv = config.Env
+}
+
+paypal, err := paypalsdk.NewClient(
+config.ClientID,
+config.Secret,
+ppEnv,
+)
+if err != nil {
+return nil, errors.Wrap(err, "Error configuring paypal")
+}
+_, err = paypal.GetAccessToken()
+if err != nil {
+return nil, errors.Wrap(err, "Error authorizing with paypal")
+}
+
+return &paypalPaymentProvider{
+client: paypal,
+}, nil
+}
+
+func (p *paypalPaymentProvider) Name() string {
+return payments.PayPalProvider
+}
+
+func (p *paypalPaymentProvider) NewCharger(ctx context.Context, r *http.Request, log logrus.FieldLogger) (payments.Charger, error) {
+var bp paypalBodyParams
+bod, err := r.GetBody()
+if err != nil {
+return nil, err
+}
+err = json.NewDecoder(bod).Decode(&bp)
+if err != nil {
+return nil, err
+}
+if bp.PaypalID == "" || bp.PaypalUserID == "" {
+return nil, errors.New("Payments requires a paypal_payment_id and paypal_user_id pair")
+}
+
+return func(amount uint64, currency string, order *models.Order, invoiceNumber int64) (string, error) {
+		return p.charge(bp.PaypalID, bp.PaypalUserID, amount, currency, order, invoiceNumber)
+		return p.charge(log, bp.PaypalID, bp.PaypalUserID, amount, currency, order, invoiceNumber)
+}, nil
+}
+
+@@ -154,16 +154,10 @@
+}
+
+_, err := p.client.PatchPayment(paymentID, []paypalsdk.PaymentPatch{invoiceNumPatch, itemListPatch})
+	if err != nil {
+		switch e := err.(type) {
+		case *paypalsdk.ErrorResponse:
+			fmt.Println(e.Details)
+		}
+	}
+return err
+}
+
+func (p *paypalPaymentProvider) charge(paymentID string, userID string, amount uint64, currency string, order *models.Order, invoiceNumber int64) (string, error) {
+func (p *paypalPaymentProvider) charge(log logrus.FieldLogger, paymentID string, userID string, amount uint64, currency string, order *models.Order, invoiceNumber int64) (string, error) {
+payment, err := p.client.GetPayment(paymentID)
+if err != nil {
+return "", err
+@@ -183,7 +177,12 @@
+}
+
+if err := p.updatePaymentWithOrder(paymentID, order, invoiceNumber); err != nil {
+		return "", errors.Wrap(err, "Updating the PayPal payment with order details failed")
+		log := log.WithError(err)
+		switch e := err.(type) {
+		case *paypalsdk.ErrorResponse:
+			log = log.WithField("err_detail", e.Details)
+		}
+		log.Warn("Failed to update transaction with details")
+}
+
+executeResult, err := p.client.ExecuteApprovedPayment(paymentID, userID)
