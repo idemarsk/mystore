@@ -84,20 +84,17 @@
             font-weight: bold;
         }
 
-        // На сторінці продукту
-function buyNow(product) {
-  const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-  cart.push(product); // {id, name, price, qty}
-  localStorage.setItem('cart', JSON.stringify(cart));
-  window.location.href = '/checkout';
-}
-        // На сторінці /checkout
-const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-// вивести cart у UI, підсумок, форма оплати і т.д.
-
-
-// Приклад виклику:
-buyNow({ id: 'sku-123', name: 'My Product', price: 29.99, qty: 1 });
+       <script>
+        function checkout() {
+        if (cart.length === 0) {
+            showMessage('Your cart is empty!');
+            return;
+        }
+        showMessage('Thank you for your order! Total: $' + cart.reduce((sum, item) => sum + (item.price * item.quantity), 0));
+        cart = [];
+        updateCart();
+    }
+</script>
 
 
         /* Hero Section */
