@@ -84,6 +84,22 @@
             font-weight: bold;
         }
 
+        // На сторінці продукту
+function buyNow(product) {
+  const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+  cart.push(product); // {id, name, price, qty}
+  localStorage.setItem('cart', JSON.stringify(cart));
+  window.location.href = '/checkout';
+}
+        // На сторінці /checkout
+const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+// вивести cart у UI, підсумок, форма оплати і т.д.
+
+
+// Приклад виклику:
+buyNow({ id: 'sku-123', name: 'My Product', price: 29.99, qty: 1 });
+
+
         /* Hero Section */
         .hero {
             height: 90vh;
